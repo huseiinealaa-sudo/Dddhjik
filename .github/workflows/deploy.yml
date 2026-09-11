@@ -37,13 +37,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Tries to switch Pages on with the "GitHub Actions" source. Creating a
+      # Pages site needs repository-administration rights, which the built-in
+      # GITHUB_TOKEN does not have, so on most repositories this step is a
+      # no-op and Pages has to be enabled once by hand:
+      #
+      #   Settings -> Pages -> Build and deployment -> Source: GitHub Actions
+      #
+      # Nothing below depends on its outputs, so a failure here must not stop
+      # the build from producing and uploading the site.
       - name: Configure GitHub Pages
         id: pages
+        continue-on-error: true
         uses: actions/configure-pages@v5
         with:
-          # Turns Pages on with the "GitHub Actions" source if it is not
-          # already enabled, so the first deployment works without a manual
-          # visit to the repository settings.
           enablement: true
 
       - name: Type-check and build

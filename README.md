@@ -174,3 +174,18 @@ src/
 ## الترخيص / License
 
 MIT
+
+### تفعيل GitHub Pages لأول مرة / One-time Pages setup
+
+إنشاء موقع Pages يحتاج صلاحية إدارة المستودع، وهي صلاحية لا يملكها رمز
+`GITHUB_TOKEN` المدمج في GitHub Actions. لذلك يلزم تفعيل الخدمة **مرة واحدة فقط** يدوياً:
+
+**Settings → Pages → Build and deployment → Source → GitHub Actions**
+
+بعد ذلك أعد تشغيل سير العمل من تبويب Actions (أو ادفع أي تعديل)، وسيُنشر الموقع تلقائياً
+في كل مرة بعدها على العنوان: `https://huseiinealaa-sudo.github.io/Dddhjik/`
+
+> Creating a Pages site requires repository-administration rights that the
+> built-in `GITHUB_TOKEN` does not have, so Pages must be enabled once by hand
+> under **Settings → Pages → Source → GitHub Actions**. Every push after that
+> deploys automatically.
