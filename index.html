@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ar" dir="ltr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#05070c" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="FPV Drone Simulator - a realistic first person view quadcopter flight simulator with Acro and Angle modes, running entirely in the browser."
+    />
+
+    <!-- iOS / iPadOS standalone web-app support -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="FPV Sim" />
+    <meta name="format-detection" content="telephone=no" />
+
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="apple-touch-icon" href="./favicon.svg" />
+
+    <title>FPV Drone Simulator</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <div style="padding: 24px; font-family: sans-serif; color: #e6edf3; background: #05070c">
+        This simulator requires JavaScript and WebGL to run.
+      </div>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,75 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - claude/fpv-drone-simulator-3jsrnn
+  workflow_dispatch:
+
+# Least privilege needed for the official Pages deployment action.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two deployments at once, but let an in-flight one finish so a
+# half-published site is never left behind.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure GitHub Pages
+        id: pages
+        uses: actions/configure-pages@v5
+        with:
+          # Turns Pages on with the "GitHub Actions" source if it is not
+          # already enabled, so the first deployment works without a manual
+          # visit to the repository settings.
+          enablement: true
+
+      - name: Type-check and build
+        # The site lives at https://<user>.github.io/<repo>/, so every asset URL
+        # has to be prefixed with the repository name. Deriving it from the
+        # repository itself keeps the build correct after a rename.
+        env:
+          VITE_BASE: /${{ github.event.repository.name }}/
+        run: npm run build
+
+      - name: Disable Jekyll processing
+        run: touch dist/.nojekyll
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
