@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Test and deploy to GitHub Pages
 
 on:
   push:
@@ -6,23 +6,22 @@ on:
       - main
       - master
       - claude/fpv-drone-simulator-3jsrnn
+  pull_request:
   workflow_dispatch:
 
-# Least privilege needed for the official Pages deployment action.
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Never run two deployments at once, but let an in-flight one finish so a
-# half-published site is never left behind.
+# Never run two deployments at once, but let an in-flight one finish.
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build:
-    name: Build
+    name: Test and build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -37,26 +36,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Tries to switch Pages on with the "GitHub Actions" source. Creating a
-      # Pages site needs repository-administration rights, which the built-in
-      # GITHUB_TOKEN does not have, so on most repositories this step is a
-      # no-op and Pages has to be enabled once by hand:
-      #
-      #   Settings -> Pages -> Build and deployment -> Source: GitHub Actions
-      #
-      # Nothing below depends on its outputs, so a failure here must not stop
-      # the build from producing and uploading the site.
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Unit tests (physics, flight controller, race logic)
+        run: npm test
+
+      # Pages must be enabled once by hand (Settings -> Pages -> Source: GitHub
+      # Actions); the built-in token usually cannot do it, so never fail here.
       - name: Configure GitHub Pages
-        id: pages
+        if: github.event_name != 'pull_request'
         continue-on-error: true
         uses: actions/configure-pages@v5
         with:
           enablement: true
 
-      - name: Type-check and build
-        # The site lives at https://<user>.github.io/<repo>/, so every asset URL
-        # has to be prefixed with the repository name. Deriving it from the
-        # repository itself keeps the build correct after a rename.
+      - name: Build
+        # The site is served from https://<user>.github.io/<repo>/.
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
         run: npm run build
@@ -65,12 +61,14 @@ jobs:
         run: touch dist/.nojekyll
 
       - name: Upload artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
   deploy:
     name: Deploy
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:

@@ -1,36 +1,36 @@
 <!doctype html>
-<html lang="ar" dir="ltr">
+<html lang="en" dir="ltr">
   <head>
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover"
+      content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#05070c" />
+    <meta name="theme-color" content="#04070d" />
     <meta name="color-scheme" content="dark" />
     <meta
       name="description"
-      content="FPV Drone Simulator - a realistic first person view quadcopter flight simulator with Acro and Angle modes, running entirely in the browser."
+      content="Realistic FPV drone flight simulator in the browser: Betaflight-style flight controller, Acro/Angle/Horizon modes, race tracks and training drills. Works on iPad with touch sticks."
     />
 
-    <!-- iOS / iPadOS standalone web-app support -->
+    <!-- Installable to the iPad home screen: runs full screen with no browser chrome. -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="FPV Sim" />
     <meta name="format-detection" content="telephone=no" />
-
-    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="apple-touch-icon" href="./favicon.svg" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg" />
 
     <title>FPV Drone Simulator</title>
   </head>
   <body>
     <div id="root"></div>
     <noscript>
-      <div style="padding: 24px; font-family: sans-serif; color: #e6edf3; background: #05070c">
-        This simulator requires JavaScript and WebGL to run.
-      </div>
+      <p style="font-family: system-ui, sans-serif; color: #dbe7f3; background: #04070d; padding: 24px">
+        This simulator needs JavaScript and WebGL 2.
+      </p>
     </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -1,30 +1,31 @@
-import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vite';
 
 /**
- * The site is published to GitHub Pages under `https://<user>.github.io/<repo>/`,
- * so every asset URL needs to be prefixed with the repository name.
+ * GitHub Pages serves the site from `https://<user>.github.io/<repo>/`, so every
+ * asset URL must carry the repository name as a prefix.
  *
- * The CI workflow exports `VITE_BASE` derived from `${{ github.event.repository.name }}`
- * which keeps the build correct even if the repository is ever renamed.
- * Locally (and for `npm run dev`) we fall back to `/` so the dev server works as usual.
+ * CI exports VITE_BASE from `${{ github.event.repository.name }}`, which keeps
+ * the build correct after a rename. Local `npm run dev` / `npm run build` fall
+ * back to a relative base so the output also works from any static folder.
  */
-const base = process.env.VITE_BASE ?? (process.env.NODE_ENV === 'production' ? '/Dddhjik/' : '/');
+const base = process.env.VITE_BASE ?? './';
 
 export default defineConfig({
   base,
   plugins: [react()],
   build: {
-    target: 'es2020',
+    // iPadOS 15+ Safari is the oldest browser we target.
+    target: ['es2020', 'safari15'],
     outDir: 'dist',
     assetsDir: 'assets',
     sourcemap: false,
-    chunkSizeWarningLimit: 1200,
+    chunkSizeWarningLimit: 1400,
     rollupOptions: {
       output: {
-        // Split the two big vendor libraries out so the browser can cache them
-        // independently of the simulator code.
-        manualChunks: (id: string) => {
+        // Vendor code changes far less often than the simulator, so give the
+        // browser a chance to keep it cached between deployments.
+        manualChunks(id: string) {
           if (id.includes('node_modules/three')) return 'three';
           if (id.includes('node_modules/react') || id.includes('node_modules/scheduler')) return 'react';
           return undefined;
@@ -32,12 +33,6 @@ export default defineConfig({
       },
     },
   },
-  server: {
-    host: true,
-    port: 5173,
-  },
-  preview: {
-    host: true,
-    port: 4173,
-  },
+  server: { host: true, port: 5173 },
+  preview: { host: true, port: 4173 },
 });

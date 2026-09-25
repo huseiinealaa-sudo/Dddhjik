@@ -1,191 +1,153 @@
-<div align="center">
+# FPV Drone Simulator · محاكي طائرات FPV
 
-# 🚁 FPV Drone Simulator
+**[▶ Play in the browser / العب في المتصفح](https://huseiinealaa-sudo.github.io/Dddhjik/)**
 
-**محاكي طيران درون FPV احترافي يعمل بالكامل داخل المتصفح**
+A realistic FPV (first-person view) drone flight simulator that runs in the browser, built with
+TypeScript, Vite, Three.js and React. It works on desktop (keyboard, gamepad or an RC radio over
+USB) and on iPad Safari with on-screen touch sticks.
 
-A professional first-person-view quadcopter flight simulator that runs entirely in the browser.
-
-[![Deploy](https://github.com/huseiinealaa-sudo/Dddhjik/actions/workflows/deploy.yml/badge.svg)](https://github.com/huseiinealaa-sudo/Dddhjik/actions/workflows/deploy.yml)
-
-**▶️ [جرّب المحاكي مباشرة / Play now](https://huseiinealaa-sudo.github.io/Dddhjik/)**
-
-TypeScript · Vite · Three.js · React — لا توجد أي ملفات أصول خارجية، كل شيء مُولَّد برمجياً
-
-</div>
+محاكي طيران واقعي لطائرات FPV يعمل في المتصفح، مبني بـ TypeScript وVite وThree.js وReact. يعمل على
+الحاسوب (لوحة المفاتيح أو يد الألعاب أو جهاز الراديو عبر USB) وعلى متصفح Safari في الآيباد بعصي لمس
+على الشاشة.
 
 ---
 
-## التشغيل السريع / Quick start
+## العربية
+
+### المزايا
+
+- **فيزياء حقيقية بتردد 1000 هرتز**: الجاذبية، ودفع أربعة محركات مستقل مع تأخر استجابة المحرك،
+  وانخفاض الدفع مع السرعة، ومقاومة الهواء لجسم الطائرة والمراوح، والعطالة الدورانية والتأثير
+  الجيروسكوبي، وتأثير الأرض، واضطراب المراوح (Prop wash) وحلقة الدوامة، والرياح والاضطراب،
+  واصطدامات حقيقية مع الأرض والمباني والأشجار والبوابات.
+- **بطارية LiPo/Li-ion** بهبوط جهد تحت الحمل واستهلاك mAh حقيقي.
+- **متحكّم طيران على نمط Betaflight**: حلقة PID بمقاييس Betaflight، ‏Feed-forward، ‏I-term relax،
+  ‏Anti-gravity، ‏TPA، ‏Air mode، ومعدّلات Betaflight وActual.
+- **أوضاع الطيران**: ‏Angle (تسوية ذاتية للمبتدئين)، ‏Horizon، ‏Acro (للمحترفين)، ووضع السلحفاة
+  لقلب الطائرة بعد السقوط.
+- **أربع طائرات**: فري ستايل 5 إنش، سباق 5 إنش، سينيووب 3 إنش، مدى بعيد 7 إنش.
+- **عالم ثلاثي الأبعاد**: مرج بالعشب والأشجار، وبحيرة، وجبال، وساحة صناعية بمبنى مهجور وممر حاويات
+  وبرج ومستودع.
+- **سباقات** على ثلاث حلبات مع عدّ تنازلي وتوقيت لكل بوابة وأرقام قياسية وسباق ضد "شبح" أفضل لفة.
+- **تدريبات**: التحويم، والهبوط الدقيق، والدوران حول عمود.
+- **كاميرات**: ‏FPV مع ميل الكاميرا وتشوّه العدسة الواسعة، ومطاردة، وخط البصر. مظهر بث فيديو نقي
+  أو رقمي أو تناظري مع ضعف الإشارة عند الابتعاد.
+- **واجهة** بالعربية والإنجليزية، وشاشة OSD بأسلوب Betaflight (الجهد، البطارية، السرعة، الارتفاع،
+  حالة التسليح).
+
+### التشغيل محليًا
 
 ```bash
-npm install      # تثبيت الاعتماديات
-npm run dev      # تشغيل خادم التطوير على http://localhost:5173
-npm run build    # بناء نسخة الإنتاج داخل مجلد dist/
-npm run preview  # معاينة نسخة الإنتاج محلياً
+npm install
+npm run dev
 ```
 
-يتطلب المشروع **Node.js 20 أو أحدث**. خادم التطوير يستمع على كل واجهات الشبكة (`host: true`)،
-لذلك يمكنك فتح المحاكي على الآيباد عبر عنوان حاسوبك المحلي، مثل `http://192.168.1.20:5173`.
+ثم افتح الرابط الذي يظهر (عادة `http://localhost:5173`). لتجربته على الآيباد من الشبكة نفسها افتح
+عنوان الشبكة الذي يطبعه Vite.
 
----
+أوامر أخرى:
 
-## ما الذي يميّز هذا المحاكي؟ / What makes it realistic
-
-هذا ليس مجرد جسم يتحرك في مشهد ثلاثي الأبعاد، بل نموذج فيزيائي كامل لجسم صلب بست درجات حرية،
-تعلوه منظومة تحكّم طيران مبنية على نفس المبادئ المستخدمة في **Betaflight**.
-
-### المحاكاة الفيزيائية — `src/physics/`
-
-| الظاهرة | التفاصيل |
-|---|---|
-| **الجاذبية والكتلة** | طائرة 5 إنش بوزن 680 غم على بطارية 6S، نسبة دفع إلى وزن **7.9:1** |
-| **المحركات الأربعة** | كل محرك مستقل، والدفع يتناسب مع **مربع سرعة الدوران** — ولهذا يكون الحوم عند **32٪** فقط من مقبض الخانق تماماً كالطائرة الحقيقية |
-| **تأخّر المحركات** | تسارع المروحة أسرع من تباطؤها (لا يوجد فرامل على المروحة) |
-| **القصور الذاتي** | موتر عطالة كامل مع حدّ الاقتران الدوراني `ω × Iω` |
-| **الاحتكاك الهوائي** | مقاومة تربيعية مختلفة لكل محور في إطار الجسم — لهذا تسقط الطائرة ببطء وهي مستوية وتطير بسرعة وهي مائلة |
-| **أثر الأرض** | زيادة في الدفع تصل إلى 18٪ عند الاقتراب من السطح |
-| **تفريغ المروحة** | فقدان الدفع أثناء الهبوط السريع داخل الهواء المضطرب (propwash) |
-| **البطارية** | هبوط الجهد تحت الحمل، ومنحنى تفريغ واقعي لليثيوم بوليمر، وتناقص الدفع مع نفاد الشحن |
-| **الرياح** | نسيم ثابت مع هبّات متغيّرة ببطء |
-| **الاصطدام** | كرة اصطدام مع معامل ارتداد واحتكاك، وشبكة مكانية موحّدة للكشف السريع |
-
-### منظومة التحكّم — `src/flight/`
-
-* **حلقة PID كاملة لكل محور**: حدّ P و I و D بالإضافة إلى **التغذية الأمامية (Feed-Forward)** التي تمنح الإحساس بالاستجابة الفورية.
-* المشتقّة **D** تُحسب على القياس لا على الخطأ (لمنع صدمة المشتقة)، وتمرّ عبر مرشّح تمرير منخفض.
-* **I-term relax** لمنع ارتداد الطائرة في نهاية اللفّة السريعة.
-* منحنى المعدّلات هو نفسه منحنى Betaflight بمعاملات `RC Rate` و`Super Rate` و`Expo`.
-* **خلّاط AIR MODE** يحافظ على السيطرة الكاملة حتى عند الخانق الصفري.
-* أرقام الضبط معروضة بنفس مقياس Betaflight، فما تتعلّمه هنا ينتقل مباشرة إلى عتادك الحقيقي.
-
-> الفيزياء تعمل بخطوة زمنية ثابتة قدرها **500 هرتز** بشكل مستقل تماماً عن معدّل الرسم،
-> فتبقى حلقة PID مستقرة سواء كان جهازك يرسم 120 إطاراً أو 30 إطاراً في الثانية.
-
----
-
-## أوضاع الطيران / Flight modes
-
-| الوضع | الوصف |
-|---|---|
-| **ANGLE** | يعيد الطائرة إلى الوضع الأفقي تلقائياً عند ترك العصي، ويحدّد أقصى زاوية ميلان. ابدأ من هنا. |
-| **HORIZON** | يعدّل نفسه حول منتصف العصا، لكنه يسمح باللفّ الكامل عند الانحراف الأقصى. |
-| **ACRO** | لا يوجد أي تعديل ذاتي — العصي تأمر بمعدّل الدوران مباشرة، وهو ما يطير به محترفو FPV فعلياً. |
-
----
-
-## التحكّم / Controls
-
-### باللمس (آيباد وهواتف) — Touch
-
-عصوان افتراضيّتان في أسفل الشاشة. الميزة المهمّة أنهما تعملان **بالسحب النسبي**:
-المقبض لا يقفز إلى إصبعك، بل تُقاس الحركة من نقطة اللمس، لذلك لا يسبّب إعادة الإمساك
-بعصا الخانق أثناء الطيران أي قفزة مفاجئة في القدرة.
-
-خيار **الخانق اللاصق** (مفعّل افتراضياً) يجعل عصا الخانق تحتفظ بموضعها عند رفع الإصبع،
-تماماً مثل جهاز الإرسال الحقيقي.
-
-### لوحة المفاتيح — Keyboard
-
-| المفتاح | الوظيفة |
-|---|---|
-| `W` / `S` | رفع وخفض الخانق |
-| `A` / `D` | الانعراج يساراً ويميناً (Yaw) |
-| `↑` / `↓` | الميلان الأمامي والخلفي (Pitch) |
-| `←` / `→` | الدحرجة يساراً ويميناً (Roll) |
-| `Space` | تسليح / إلغاء تسليح المحركات |
-| `R` | العودة إلى آخر بوابة |
-| `C` | تبديل الكاميرا (FPV / مطاردة / مدارية) |
-| `M` | تبديل وضع الطيران |
-| `T` | إعادة تشغيل المسار من البداية |
-| `H` | إظهار وإخفاء واجهة العرض |
-| `N` | كتم الصوت |
-| `Esc` | الإعدادات |
-
-### وحدة التحكّم — Gamepad
-
-أي ذراع تحكّم USB أو بلوتوث (أو محوّل جهاز إرسال RC) يُلتقط تلقائياً عبر Gamepad API،
-ويمكن اختيار نمط العصي من 1 إلى 4 من الإعدادات.
-
----
-
-## كيف تُقلع أول مرة / Your first flight
-
-1. أنزل الخانق إلى الصفر تماماً، ثم اضغط **ARM**. لن تسمح الطائرة بالتسليح إذا كان الخانق مرفوعاً أو كانت الطائرة مقلوبة — تماماً كمتحكّم الطيران الحقيقي.
-2. ارفع الخانق تدريجياً حتى **٤٠٪** تقريباً. الطائرة تحوم عند مستوى أخفض بكثير مما يتوقّعه أغلب المبتدئين.
-3. اتبع البوّابة المضيئة باللون السماوي. المرور من البوّابة رقم ١ يبدأ مؤقّت اللفّة.
-4. عند الارتطام تُعاد الطائرة تلقائياً إلى آخر بوّابة بعد لحظة (يمكن تعطيل ذلك من الإعدادات).
-
----
-
-## المسار والبيئة / The course
-
-* **١٢ بوّابة** تشكّل حلبة كاملة مع توقيت لفّات وتسجيل أفضل زمن، وكشف المرور يتم تحليلياً عبر تتبّع إشارة المسافة إلى مستوى البوّابة — فلا يمكن «اختراق» بوّابة حتى عند ١٥٠ كم/س.
-* حاويات شحن وصناديق وأعمدة تعرّج وعارضة ليمبو — كلها أجسام صلبة قابلة للاصطدام.
-* أرض ذات تضاريس حقيقية: منطقة مستوية في المركز وتلال متموّجة حولها، ويستخدم كل من الشكل المرئي ونظام الاصطدام **نفس دالة الارتفاع** فلا يمكن للطائرة أن تغوص في الأرض أو تطفو فوقها.
-* سماء محسوبة رياضياً مع قرص شمس، وسحب، وحزام أشجار، وجبال بعيدة.
-
----
-
-## اللمسات الاحترافية / Extra touches
-
-* **مظهر الفيديو التماثلي**: تشويه برميلي من عدسة عين السمكة، وزيغ لوني، وخطوط مسح، وتعتيم الأطراف، وتشويش يزداد كلما ابتعدت الطائرة وضعفت جودة الرابط — كل ذلك في تمريرة رسم واحدة مكتوبة يدوياً (بلا `EffectComposer`) حفاظاً على الأداء على الأجهزة اللوحية.
-* **صوت مُركَّب بالكامل** عبر Web Audio: أربعة مذبذبات تتبع سرعة كل محرك على حدة، فينشأ «هدير» الكواد الحقيقي من التداخل بينها، مع ضجيج هواء يتبع السرعة وأصوات ارتطام وتنبيهات.
-* **واجهة OSD** على طراز نظارات FPV: أفق اصطناعي، وشريط بوصلة، وبطارية بالجهد والتيار والسعة المستهلكة، وأشرطة المحركات، ومؤشّر اتجاه البوّابة التالية.
-* جميع القوام (textures) تُرسم على `canvas` وقت التشغيل، فحجم الحزمة صغير ولا يوجد أي تحميل لملفات صور.
-
----
-
-## الأداء / Performance
-
-ثلاثة مستويات جودة تتحكّم في دقّة التضاريس وخرائط الظلال وتنعيم الحواف ونسبة البكسل.
-القيم الافتراضية مضبوطة للآيباد؛ إن انخفض معدّل الإطارات فاختر **MED** أو **LOW** من
-تبويب SYSTEM في الإعدادات. جميع الإعدادات تُحفظ تلقائياً في `localStorage`.
-
----
-
-## بنية المشروع / Project structure
-
-```
-src/
-├── core/          الأنواع والإعدادات الافتراضية والمخازن ودوال الرياضيات ودالة ارتفاع التضاريس
-├── physics/       الجسم الصلب والبطارية والاصطدام
-├── flight/        متحكّم الطيران وحلقات PID والمرشّحات ومنحنيات المعدّلات
-├── input/         لوحة المفاتيح ووحدة التحكّم والعصي اللمسية ومزج المدخلات
-├── scene/         السماء والبيئة والمسار ونموذج الطائرة والكاميرات ومؤثّرات ما بعد المعالجة
-├── sim/           حلقة المحاكاة الرئيسية التي تربط كل ما سبق
-├── audio/         توليد الصوت عبر Web Audio
-└── ui/            واجهة React: شاشة العرض والعصي ولوحة الإعدادات
+```bash
+npm run build     # فحص الأنواع ثم بناء نسخة الإنتاج في dist/
+npm run preview   # معاينة نسخة الإنتاج
+npm test          # اختبارات الفيزياء ومتحكّم الطيران ومنطق السباق
 ```
 
-الفيزياء والرسم منفصلان تماماً عن React: يدفع المحاكي لقطة قياس عن بعد إلى مخزن خارجي
-عشرين مرة في الثانية فقط، ولا تُعاد تهيئة أي مكوّن React أثناء حلقة الرسم.
+### التحكم
+
+| الإجراء | لوحة المفاتيح | اللمس |
+| --- | --- | --- |
+| الخانق | W / S | العصا اليسرى (أعلى/أسفل) — لا ترتدّ |
+| الانعراج | A / D | العصا اليسرى (يمين/يسار) |
+| الانحدار / الدحرجة | الأسهم | العصا اليمنى |
+| تسليح / فصل | Space | زر «تسليح» |
+| تغيير الوضع | M | زر «الوضع» |
+| الكاميرا | C | زر الكاميرا |
+| إعادة | R | زر الإعادة |
+| وضع السلحفاة | T | يظهر عند انقلاب الطائرة |
+| إيقاف مؤقت | Esc | زر الإيقاف |
+
+للتسليح يجب أن يكون الخانق في الأسفل. يمكن تغيير نمط جهاز التحكم (Mode 1–4) وحجم العصي من الإعدادات،
+كما يمكن توصيل يد ألعاب أو جهاز راديو (EdgeTX/OpenTX) وتعيين القنوات ومعايرتها.
+
+**نصيحة للآيباد:** افتح الرابط في Safari ثم «مشاركة ← إضافة إلى الشاشة الرئيسية» ليعمل بملء الشاشة.
+
+### النشر على GitHub Pages
+
+يقوم ملف `.github/workflows/deploy.yml` بفحص الأنواع وتشغيل الاختبارات والبناء ثم النشر تلقائيًا عند
+كل دفع. يلزم تفعيل Pages مرة واحدة من: **Settings ← Pages ← Source: GitHub Actions**.
+يأخذ `vite.config.ts` المسار الأساسي من المتغير `VITE_BASE` (اسم المستودع في الـ CI، و`./` محليًا).
 
 ---
 
-## النشر / Deployment
+## English
 
-يُنشر المشروع تلقائياً على GitHub Pages عبر `.github/workflows/deploy.yml` عند كل دفع.
-يُشتق مسار الأساس (`base`) في `vite.config.ts` من متغيّر البيئة `VITE_BASE` الذي يضبطه
-سير العمل من اسم المستودع، فيبقى البناء صحيحاً حتى لو أُعيدت تسمية المستودع.
+### Features
 
----
+- **1 kHz rigid-body physics**: gravity, four independently simulated motors with spin-up lag,
+  thrust that falls off with airspeed, body and rotor drag, rotational inertia and gyroscopic
+  effects, ground effect, prop wash / vortex ring state, wind with gusts and turbulence, and real
+  collisions with terrain, buildings, trees and gates.
+- **LiPo / Li-ion battery** model with voltage sag under load and mAh consumption.
+- **Betaflight-style flight controller**: PID loop on Betaflight's scaling, feed-forward, I-term
+  relax, anti-gravity, TPA, air mode, Betaflight and Actual rates.
+- **Flight modes**: Angle (self-levelling, for beginners), Horizon, Acro (rate mode), plus Turtle
+  mode to flip back over after a crash.
+- **Four airframes**: 5" freestyle, 5" racer, 3" cinewhoop, 7" long range.
+- **3D world**: meadow with grass and trees, a lake, mountains, and an industrial yard with an
+  abandoned building, container canyon, lattice tower and warehouse.
+- **Racing** on three tracks: countdown, per-gate splits, lap records and a best-lap ghost.
+- **Training drills**: hover, precision landing, orbit.
+- **Cameras**: FPV with uptilt and wide-angle lens distortion, chase, and line of sight. Clean,
+  digital HD or analog video look, with break-up as the link weakens.
+- **Arabic and English UI** and a Betaflight-style OSD (voltage, battery, speed, altitude, arm state).
 
-## الترخيص / License
+### Run locally
 
-MIT
+```bash
+npm install
+npm run dev
+```
 
-### تفعيل GitHub Pages لأول مرة / One-time Pages setup
+Open the printed URL (usually `http://localhost:5173`). To try it on an iPad on the same network,
+open the network URL Vite prints.
 
-إنشاء موقع Pages يحتاج صلاحية إدارة المستودع، وهي صلاحية لا يملكها رمز
-`GITHUB_TOKEN` المدمج في GitHub Actions. لذلك يلزم تفعيل الخدمة **مرة واحدة فقط** يدوياً:
+```bash
+npm run build     # type-check and build the production bundle into dist/
+npm run preview   # serve the production build
+npm test          # physics, flight-controller and race-logic tests
+```
 
-**Settings → Pages → Build and deployment → Source → GitHub Actions**
+### Controls
 
-بعد ذلك أعد تشغيل سير العمل من تبويب Actions (أو ادفع أي تعديل)، وسيُنشر الموقع تلقائياً
-في كل مرة بعدها على العنوان: `https://huseiinealaa-sudo.github.io/Dddhjik/`
+| Action | Keyboard | Touch |
+| --- | --- | --- |
+| Throttle | W / S | Left stick up/down (stays put) |
+| Yaw | A / D | Left stick left/right |
+| Pitch / roll | Arrow keys | Right stick |
+| Arm / disarm | Space | ARM button |
+| Flight mode | M | Mode button |
+| Camera | C | Camera button |
+| Reset | R | Reset button |
+| Turtle mode | T | Appears when upside down |
+| Pause | Esc | Pause button |
 
-> Creating a Pages site requires repository-administration rights that the
-> built-in `GITHUB_TOKEN` does not have, so Pages must be enabled once by hand
-> under **Settings → Pages → Source → GitHub Actions**. Every push after that
-> deploys automatically.
+Throttle must be at zero to arm. Transmitter mode (1–4), stick size and more are in Settings; a
+gamepad or an RC radio in USB-joystick mode can be bound and calibrated there.
+
+### Deploying to GitHub Pages
+
+`.github/workflows/deploy.yml` type-checks, runs the tests, builds and deploys on every push.
+Enable Pages once under **Settings → Pages → Source: GitHub Actions**. `vite.config.ts` reads the
+base path from `VITE_BASE` (the repository name in CI, `./` locally).
+
+### Project layout
+
+```
+src/sim/      physics, battery, wind, collisions, flight controller (no rendering; unit tested)
+src/input/    touch / keyboard / gamepad / RC radio input
+src/engine/   Three.js world, drone model, cameras, post-processing
+src/game/     game loop, race & drill logic, audio, settings
+src/ui/       React interface, OSD, touch sticks, translations
+tests/        Vitest tests
+```

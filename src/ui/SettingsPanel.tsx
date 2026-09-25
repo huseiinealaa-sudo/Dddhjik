@@ -1,412 +1,495 @@
-import { useState } from 'react';
-import { BEGINNER_RATES, DEFAULT_PID, DEFAULT_RATES } from '../core/Defaults';
-import { resetSettings, updateSettings } from '../core/SettingsStore';
-import { maxRate } from '../flight/Rates';
-import type {
-  CameraMode,
-  FlightMode,
-  PidAxisGains,
-  QualityLevel,
-  SimSettings,
-  StickMode,
-} from '../core/Types';
-import { Field, Section, Segmented, Slider, Toggle } from './Controls';
+import { useEffect, useRef, useState } from 'react';
+import type { Game } from '../game/game';
+import { clearRecords } from '../game/records';
+import { defaultSettings, resolveRates, type RateStyle, type Settings } from '../game/settings';
+import type { StickMode } from '../input/inputManager';
+import { CHANNELS, cloneMapping, GAMEPAD_MODE2, RADIO_AETR, type Channel, type GamepadMapping } from '../input/mapping';
+import { maxRate, rateFor } from '../sim/fc/rates';
+import { PRESETS } from '../sim/presets';
+import type { AxisRate, FlightMode } from '../sim/types';
+import { useI18n } from './i18n';
+import { Icon } from './icons';
 
-interface SettingsPanelProps {
-  settings: SimSettings;
+interface Props {
+  game: Game | null;
+  settings: Settings;
+  onChange: (patch: Partial<Settings>) => void;
   onClose: () => void;
-  onRestartCourse: () => void;
 }
 
-type Tab = 'flight' | 'camera' | 'tuning' | 'world' | 'graphics';
+type Tab = 'flight' | 'controls' | 'camera' | 'sim' | 'system';
 
-const TABS: Array<{ value: Tab; label: string }> = [
-  { value: 'flight', label: 'FLIGHT' },
-  { value: 'camera', label: 'CAMERA' },
-  { value: 'tuning', label: 'TUNING' },
-  { value: 'world', label: 'WORLD' },
-  { value: 'graphics', label: 'SYSTEM' },
-];
+function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="row">
+      <div className="row-label">
+        <span>{label}</span>
+        {hint && <small>{hint}</small>}
+      </div>
+      <div className="row-control">{children}</div>
+    </div>
+  );
+}
 
-export function SettingsPanel({ settings, onClose, onRestartCourse }: SettingsPanelProps): React.JSX.Element {
-  const [tab, setTab] = useState<Tab>('flight');
+function Slider(props: { value: number; min: number; max: number; step: number; onChange: (v: number) => void; format?: (v: number) => string }) {
+  const { value, min, max, step, onChange, format } = props;
+  return (
+    <div className="slider">
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      <output>{format ? format(value) : value}</output>
+    </div>
+  );
+}
 
-  const ratePreset =
-    settings.rates.roll.rcRate === BEGINNER_RATES.roll.rcRate
-      ? 'beginner'
-      : settings.rates.roll.rcRate === DEFAULT_RATES.roll.rcRate
-        ? 'standard'
-        : 'custom';
+function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  const { t } = useI18n();
+  return (
+    <button className={`toggle ${value ? 'on' : ''}`} role="switch" aria-checked={value} onClick={() => onChange(!value)}>
+      <span className="toggle-knob" />
+      <span className="sr-only">{value ? t('settings.on') : t('settings.off')}</span>
+    </button>
+  );
+}
+
+function Choice<T extends string>(props: { value: T; options: Array<{ value: T; label: string }>; onChange: (v: T) => void }) {
+  return (
+    <div className="segmented">
+      {props.options.map((o) => (
+        <button key={o.value} className={props.value === o.value ? 'selected' : ''} onClick={() => props.onChange(o.value)}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Rate curve preview: deg/s against stick deflection. */
+function RateCurve({ settings }: { settings: Settings }) {
+  const rates = resolveRates(settings);
+  const w = 220;
+  const h = 110;
+  const maxAll = Math.max(maxRate(rates, 'roll'), maxRate(rates, 'yaw'), 200);
+  const path = (axis: 'roll' | 'yaw'): string => {
+    let d = '';
+    for (let i = 0; i <= 40; i++) {
+      const s = i / 40;
+      const v = Math.abs(rateFor(rates, axis, s));
+      d += `${i === 0 ? 'M' : 'L'}${(s * w).toFixed(1)},${(h - (v / maxAll) * h).toFixed(1)}`;
+    }
+    return d;
+  };
+  return (
+    <svg className="rate-curve" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
+      <path d={path('roll')} className="curve-roll" />
+      <path d={path('yaw')} className="curve-yaw" />
+    </svg>
+  );
+}
+
+function GamepadSection({ game, settings, onChange }: { game: Game | null; settings: Settings; onChange: Props['onChange'] }) {
+  const { t } = useI18n();
+  const [, force] = useState(0);
+  const [learning, setLearning] = useState<Channel | null>(null);
+  const [calibrating, setCalibrating] = useState(false);
+  const baseline = useRef<number[]>([]);
+  const baseButtons = useRef<boolean[]>([]);
+  const cal = useRef<Array<{ min: number; max: number }>>([]);
+  const mapping = settings.mapping;
+
+  // Poll at ~20 Hz for the live bars and learning.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const snap = game?.input.gamepad.snapshot;
+      if (snap?.connected) {
+        if (learning) {
+          let best = -1;
+          let bestDelta = 0.45;
+          snap.axes.forEach((v, i) => {
+            const d = Math.abs(v - (baseline.current[i] ?? 0));
+            if (d > bestDelta) {
+              bestDelta = d;
+              best = i;
+            }
+          });
+          let button = -1;
+          snap.buttons.forEach((b, i) => {
+            if (b && !baseButtons.current[i]) button = i;
+          });
+          if (best >= 0 || button >= 0) {
+            const m: GamepadMapping = cloneMapping(mapping);
+            m.profile = 'custom';
+            const prev = m.channels[learning];
+            m.channels[learning] =
+              best >= 0
+                ? { kind: 'axis', index: best, invert: false, min: prev.min, max: prev.max }
+                : { kind: 'button', index: button, invert: false, min: -1, max: 1 };
+            // Stick axes: moved "up/right" should be positive.
+            if (best >= 0 && snap.axes[best] - (baseline.current[best] ?? 0) < 0 && learning !== 'arm' && learning !== 'mode' && learning !== 'turtle') {
+              m.channels[learning].invert = true;
+            }
+            onChange({ mapping: m });
+            setLearning(null);
+          }
+        }
+        if (calibrating) {
+          snap.axes.forEach((v, i) => {
+            const c = (cal.current[i] ??= { min: v, max: v });
+            c.min = Math.min(c.min, v);
+            c.max = Math.max(c.max, v);
+          });
+        }
+      }
+      force((n) => (n + 1) % 1000);
+    }, 50);
+    return () => window.clearInterval(id);
+  }, [game, learning, calibrating, mapping, onChange]);
+
+  const snap = game?.input.gamepad.snapshot;
+  if (!snap?.connected) return <p className="muted">{t('settings.gamepad.none')}</p>;
+
+  const startLearn = (c: Channel): void => {
+    baseline.current = snap.axes.slice();
+    baseButtons.current = snap.buttons.slice();
+    setLearning(c);
+  };
+
+  const finishCalibration = (): void => {
+    const m = cloneMapping(mapping);
+    for (const c of CHANNELS) {
+      const b = m.channels[c];
+      const r = cal.current[b.index];
+      if (b.kind === 'axis' && r && r.max - r.min > 0.5) {
+        b.min = r.min;
+        b.max = r.max;
+      }
+    }
+    onChange({ mapping: m });
+    cal.current = [];
+    setCalibrating(false);
+  };
+
+  const channelValue = (c: Channel): number => {
+    const ch = game?.input.gamepad.channels;
+    return ch ? ch[c] : 0;
+  };
 
   return (
-    <div className="overlay" role="dialog" aria-modal="true" aria-label="Simulator settings">
-      <div className="panel">
-        <h2 className="panel__title">Settings</h2>
-        <p className="panel__subtitle">
-          Everything is saved to this device automatically. Press <kbd>Esc</kbd> to go back to flying.
-        </p>
-
-        <div style={{ marginBottom: 18 }}>
-          <Segmented value={tab} options={TABS} onChange={setTab} />
-        </div>
-
-        {tab === 'flight' ? (
-          <>
-            <Section title="Flight mode">
-              <Field
-                label="Mode"
-                hint="Angle self-levels and limits the bank angle. Horizon self-levels only near the stick centre. Acro gives the pilot full, unassisted control — this is what real FPV pilots fly."
-              >
-                <Segmented<FlightMode>
-                  value={settings.mode}
-                  options={[
-                    { value: 'angle', label: 'ANGLE' },
-                    { value: 'horizon', label: 'HORIZON' },
-                    { value: 'acro', label: 'ACRO' },
-                  ]}
-                  onChange={(mode) => updateSettings({ mode })}
-                />
-              </Field>
-              <Field label="Max bank angle" hint="Angle mode only.">
-                <Slider
-                  label="Max bank angle"
-                  value={settings.pid.angleLimitDeg}
-                  min={15}
-                  max={80}
-                  step={1}
-                  onChange={(angleLimitDeg) =>
-                    updateSettings({ pid: { ...settings.pid, angleLimitDeg } })
-                  }
-                  format={(v) => `${v.toFixed(0)}°`}
-                />
-              </Field>
-              <Field label="Air mode" hint="Keeps full attitude authority even at zero throttle.">
-                <Toggle
-                  label="Air mode"
-                  checked={settings.airMode}
-                  onChange={(airMode) => updateSettings({ airMode })}
-                />
-              </Field>
-              <Field
-                label="Auto recover"
-                hint="Puts the aircraft back at the last gate a moment after a crash."
-              >
-                <Toggle
-                  label="Auto recover"
-                  checked={settings.autoRecover}
-                  onChange={(autoRecover) => updateSettings({ autoRecover })}
-                />
-              </Field>
-            </Section>
-
-            <Section title="Rates">
-              <Field label="Preset" hint="How fast the aircraft rotates at full stick.">
-                <Segmented
-                  value={ratePreset}
-                  options={[
-                    { value: 'beginner', label: 'BEGINNER' },
-                    { value: 'standard', label: 'STANDARD' },
-                    { value: 'custom', label: 'CUSTOM' },
-                  ]}
-                  onChange={(preset) => {
-                    if (preset === 'beginner') updateSettings({ rates: BEGINNER_RATES });
-                    else if (preset === 'standard') updateSettings({ rates: DEFAULT_RATES });
-                  }}
-                />
-              </Field>
-              {(['roll', 'pitch', 'yaw'] as const).map((axis) => (
-                <Field
-                  key={axis}
-                  label={`${axis[0].toUpperCase()}${axis.slice(1)} rate`}
-                  hint={`Maximum ${maxRate(settings.rates[axis]).toFixed(0)} °/s at full stick`}
-                >
-                  <Slider
-                    label={`${axis} rate`}
-                    value={settings.rates[axis].rcRate}
-                    min={0.3}
-                    max={2.2}
-                    step={0.05}
-                    onChange={(rcRate) =>
-                      updateSettings({
-                        rates: { ...settings.rates, [axis]: { ...settings.rates[axis], rcRate } },
-                      })
-                    }
-                  />
-                </Field>
-              ))}
-              <Field label="Expo" hint="Softens the centre of the sticks for finer corrections.">
-                <Slider
-                  label="Expo"
-                  value={settings.rates.roll.expo}
-                  min={0}
-                  max={0.85}
-                  step={0.01}
-                  onChange={(expo) =>
-                    updateSettings({
-                      rates: {
-                        roll: { ...settings.rates.roll, expo },
-                        pitch: { ...settings.rates.pitch, expo },
-                        yaw: { ...settings.rates.yaw, expo: expo * 0.8 },
-                      },
-                    })
-                  }
-                />
-              </Field>
-            </Section>
-
-            <Section title="Transmitter">
-              <Field label="Stick mode" hint="Mode 2 is the most common layout worldwide.">
-                <Segmented<StickMode>
-                  value={settings.stickMode}
-                  options={[
-                    { value: 'mode1', label: 'M1' },
-                    { value: 'mode2', label: 'M2' },
-                    { value: 'mode3', label: 'M3' },
-                    { value: 'mode4', label: 'M4' },
-                  ]}
-                  onChange={(stickMode) => updateSettings({ stickMode })}
-                />
-              </Field>
-              <Field
-                label="Sticky throttle"
-                hint="The touch throttle keeps its position when you lift your finger, like a real radio."
-              >
-                <Toggle
-                  label="Sticky throttle"
-                  checked={settings.stickyThrottle}
-                  onChange={(stickyThrottle) => updateSettings({ stickyThrottle })}
-                />
-              </Field>
-              <Field label="Dead-band" hint="Ignores tiny movements around the stick centre.">
-                <Slider
-                  label="Dead-band"
-                  value={settings.deadband}
-                  min={0}
-                  max={0.15}
-                  step={0.005}
-                  onChange={(deadband) => updateSettings({ deadband })}
-                  format={(v) => `${(v * 100).toFixed(1)}%`}
-                />
-              </Field>
-              <Field label="Stick size" hint="Scale the on-screen sticks to fit your hands.">
-                <Slider
-                  label="Stick size"
-                  value={settings.stickSize}
-                  min={0.7}
-                  max={1.4}
-                  step={0.05}
-                  onChange={(stickSize) => updateSettings({ stickSize })}
-                  format={(v) => `${(v * 100).toFixed(0)}%`}
-                />
-              </Field>
-            </Section>
-          </>
-        ) : null}
-
-        {tab === 'camera' ? (
-          <Section title="Camera">
-            <Field label="View" hint="FPV is the onboard camera; chase and orbit are external views.">
-              <Segmented<CameraMode>
-                value={settings.cameraMode}
-                options={[
-                  { value: 'fpv', label: 'FPV' },
-                  { value: 'chase', label: 'CHASE' },
-                  { value: 'orbit', label: 'ORBIT' },
-                ]}
-                onChange={(cameraMode) => updateSettings({ cameraMode })}
-              />
-            </Field>
-            <Field
-              label="Camera tilt"
-              hint="More up-tilt lets you fly faster before the horizon drops out of frame."
-            >
-              <Slider
-                label="Camera tilt"
-                value={settings.cameraTiltDeg}
-                min={0}
-                max={55}
-                step={1}
-                onChange={(cameraTiltDeg) => updateSettings({ cameraTiltDeg })}
-                format={(v) => `${v.toFixed(0)}°`}
-              />
-            </Field>
-            <Field label="Field of view" hint="Horizontal FOV. Real FPV cameras sit around 110–130°.">
-              <Slider
-                label="Field of view"
-                value={settings.fovDeg}
-                min={70}
-                max={155}
-                step={1}
-                onChange={(fovDeg) => updateSettings({ fovDeg })}
-                format={(v) => `${v.toFixed(0)}°`}
-              />
-            </Field>
-            <Field label="Analogue video look" hint="Barrel distortion, scanlines, static and vignetting.">
-              <Toggle
-                label="Analogue video look"
-                checked={settings.analogLook}
-                onChange={(analogLook) => updateSettings({ analogLook })}
-              />
-            </Field>
-            <Field label="Flight trail" hint="Draws the path you have flown (external views).">
-              <Toggle
-                label="Flight trail"
-                checked={settings.showTrail}
-                onChange={(showTrail) => updateSettings({ showTrail })}
-              />
-            </Field>
-          </Section>
-        ) : null}
-
-        {tab === 'tuning' ? (
-          <Section title="PID tuning">
-            <p className="panel__subtitle" style={{ marginTop: 0 }}>
-              These are the same numbers you would type into Betaflight. P sets the strength of the
-              correction, I holds the attitude against wind, D damps the overshoot and FF makes the
-              aircraft follow the sticks instantly.
-            </p>
-            {(['roll', 'pitch', 'yaw'] as const).map((axis) => (
-              <div key={axis} style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', marginBottom: 4 }}>
-                  {axis.toUpperCase()}
-                </div>
-                {(['p', 'i', 'd', 'f'] as const).map((term) => (
-                  <Field key={term} label={term.toUpperCase()}>
-                    <Slider
-                      label={`${axis} ${term}`}
-                      value={settings.pid[axis][term]}
-                      min={0}
-                      max={term === 'f' ? 250 : term === 'i' ? 200 : term === 'd' ? 90 : 120}
-                      step={1}
-                      onChange={(next) => {
-                        const axisGains: PidAxisGains = { ...settings.pid[axis], [term]: next };
-                        updateSettings({ pid: { ...settings.pid, [axis]: axisGains } });
-                      }}
-                      format={(v) => v.toFixed(0)}
-                    />
-                  </Field>
-                ))}
-              </div>
-            ))}
-            <Field label="Angle strength" hint="How hard Angle mode pulls back to level.">
-              <Slider
-                label="Angle strength"
-                value={settings.pid.angleP}
-                min={2}
-                max={20}
-                step={0.5}
-                onChange={(angleP) => updateSettings({ pid: { ...settings.pid, angleP } })}
-                format={(v) => v.toFixed(1)}
-              />
-            </Field>
-            <div className="panel__actions">
+    <div className="gamepad">
+      <p className="muted small">{snap.id}</p>
+      <Row label={t('settings.gamepad.profile')}>
+        <Choice
+          value={mapping.profile}
+          options={[
+            { value: 'gamepad', label: t('settings.gamepad.profile.gamepad') },
+            { value: 'radio', label: t('settings.gamepad.profile.radio') },
+            { value: 'custom', label: t('settings.gamepad.profile.custom') },
+          ]}
+          onChange={(p) => {
+            if (p === 'gamepad') onChange({ mapping: cloneMapping(GAMEPAD_MODE2) });
+            else if (p === 'radio') onChange({ mapping: cloneMapping(RADIO_AETR) });
+            else onChange({ mapping: { ...cloneMapping(mapping), profile: 'custom' } });
+          }}
+        />
+      </Row>
+      <div className="channel-list">
+        {CHANNELS.map((c) => {
+          const b = mapping.channels[c];
+          const v = channelValue(c);
+          return (
+            <div className="channel" key={c}>
+              <span className="channel-name">{t(`settings.channel.${c}`)}</span>
+              <span className="channel-bind">{b.kind === 'none' ? '—' : `${b.kind === 'axis' ? 'A' : 'B'}${b.index}`}</span>
+              <span className="channel-bar">
+                <span style={{ insetInlineStart: `${((v + 1) / 2) * 100}%` }} />
+              </span>
+              <button className="chip small" onClick={() => startLearn(c)}>
+                {learning === c ? t('settings.gamepad.learning') : t('settings.gamepad.learn')}
+              </button>
               <button
-                type="button"
-                className="btn btn--ghost"
-                onClick={() => updateSettings({ pid: DEFAULT_PID })}
+                className={`chip small ${b.invert ? 'selected' : ''}`}
+                onClick={() => {
+                  const m = cloneMapping(mapping);
+                  m.channels[c].invert = !m.channels[c].invert;
+                  onChange({ mapping: m });
+                }}
               >
-                RESTORE STOCK PIDS
+                {t('settings.gamepad.invert')}
               </button>
             </div>
-          </Section>
-        ) : null}
-
-        {tab === 'world' ? (
-          <Section title="Conditions">
-            <Field label="Wind" hint="Steady breeze plus gusts. Great practice for holding a line.">
-              <Slider
-                label="Wind"
-                value={settings.windSpeed}
-                min={0}
-                max={12}
-                step={0.5}
-                onChange={(windSpeed) => updateSettings({ windSpeed })}
-                format={(v) => `${v.toFixed(1)} m/s`}
-              />
-            </Field>
-            <Field label="Time scale" hint="Slow motion makes it much easier to learn a new trick.">
-              <Slider
-                label="Time scale"
-                value={settings.timeScale}
-                min={0.25}
-                max={1}
-                step={0.05}
-                onChange={(timeScale) => updateSettings({ timeScale })}
-                format={(v) => `${(v * 100).toFixed(0)}%`}
-              />
-            </Field>
-            <Field label="Battery simulation" hint="Turn off for unlimited flight time while practising.">
-              <Toggle
-                label="Battery simulation"
-                checked={settings.batteryEnabled}
-                onChange={(batteryEnabled) => updateSettings({ batteryEnabled })}
-              />
-            </Field>
-            <div className="panel__actions">
-              <button type="button" className="btn btn--ghost" onClick={onRestartCourse}>
-                RESTART COURSE
-              </button>
-            </div>
-          </Section>
-        ) : null}
-
-        {tab === 'graphics' ? (
-          <>
-            <Section title="Graphics">
-              <Field label="Quality" hint="Lower this if the frame rate drops on your device.">
-                <Segmented<QualityLevel>
-                  value={settings.quality}
-                  options={[
-                    { value: 'low', label: 'LOW' },
-                    { value: 'medium', label: 'MED' },
-                    { value: 'high', label: 'HIGH' },
-                  ]}
-                  onChange={(quality) => updateSettings({ quality })}
-                />
-              </Field>
-              <Field label="Show HUD">
-                <Toggle
-                  label="Show HUD"
-                  checked={settings.hudEnabled}
-                  onChange={(hudEnabled) => updateSettings({ hudEnabled })}
-                />
-              </Field>
-            </Section>
-            <Section title="Audio">
-              <Field label="Sound" hint="Motors, wind and impacts are synthesised in real time.">
-                <Toggle
-                  label="Sound"
-                  checked={settings.audioEnabled}
-                  onChange={(audioEnabled) => updateSettings({ audioEnabled })}
-                />
-              </Field>
-              <Field label="Volume">
-                <Slider
-                  label="Volume"
-                  value={settings.masterVolume}
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  onChange={(masterVolume) => updateSettings({ masterVolume })}
-                  format={(v) => `${(v * 100).toFixed(0)}%`}
-                />
-              </Field>
-            </Section>
-            <Section title="Reset">
-              <div className="panel__actions" style={{ justifyContent: 'flex-start' }}>
-                <button type="button" className="btn btn--ghost" onClick={resetSettings}>
-                  RESTORE ALL DEFAULTS
-                </button>
-              </div>
-            </Section>
-          </>
-        ) : null}
-
-        <div className="panel__actions">
-          <button type="button" className="btn btn--primary" onClick={onClose}>
-            BACK TO FLYING
+          );
+        })}
+      </div>
+      {calibrating ? (
+        <div className="calibrate">
+          <p>{t('settings.gamepad.calibrating')}</p>
+          <button className="btn primary" onClick={finishCalibration}>
+            {t('settings.gamepad.done')}
           </button>
         </div>
+      ) : (
+        <button className="btn" onClick={() => setCalibrating(true)}>
+          {t('settings.gamepad.calibrate')}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function SettingsPanel({ game, settings, onChange, onClose }: Props) {
+  const { t } = useI18n();
+  const [tab, setTab] = useState<Tab>('flight');
+  const [cleared, setCleared] = useState(false);
+  const s = settings;
+  const preset = PRESETS[s.quad];
+  const rates = resolveRates(s);
+  const tabs: Tab[] = ['flight', 'controls', 'camera', 'sim', 'system'];
+
+  const setCustomAxis = (axes: Array<'roll' | 'pitch' | 'yaw'>, key: keyof AxisRate, v: number): void => {
+    const base = s.rateStyle === 'custom' ? s.customRates : { ...resolveRates(s), type: 'actual' as const };
+    const next = JSON.parse(JSON.stringify(base)) as typeof base;
+    if (next.type !== 'actual') {
+      next.type = 'actual';
+      for (const a of ['roll', 'pitch', 'yaw'] as const) next[a] = { center: 200, max: 670, expo: 0.5 };
+    }
+    for (const a of axes) next[a][key] = v;
+    onChange({ rateStyle: 'custom', customRates: next });
+  };
+
+  return (
+    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal settings" role="dialog" aria-label={t('settings.title')}>
+        <header className="modal-header">
+          <h2>{t('settings.title')}</h2>
+          <button className="icon-btn" onClick={onClose} aria-label={t('settings.close')}>
+            <Icon name="close" />
+          </button>
+        </header>
+        <nav className="tabs">
+          {tabs.map((k) => (
+            <button key={k} className={tab === k ? 'selected' : ''} onClick={() => setTab(k)}>
+              {t(`settings.tab.${k}`)}
+            </button>
+          ))}
+        </nav>
+        <div className="modal-body">
+          {tab === 'flight' && (
+            <>
+              <Row label={t('settings.flightMode')} hint={t(`mode.${s.flightMode}.blurb`)}>
+                <Choice<FlightMode>
+                  value={s.flightMode}
+                  options={(['angle', 'horizon', 'acro'] as const).map((m) => ({ value: m, label: t(`mode.${m}`) }))}
+                  onChange={(v) => onChange({ flightMode: v })}
+                />
+              </Row>
+              <Row
+                label={t('settings.rates')}
+                hint={t('settings.rates.maxRate', { roll: Math.round(maxRate(rates, 'roll')), yaw: Math.round(maxRate(rates, 'yaw')) })}
+              >
+                <Choice<RateStyle>
+                  value={s.rateStyle}
+                  options={(['preset', 'beginner', 'smooth', 'freestyle', 'race', 'custom'] as const).map((r) => ({
+                    value: r,
+                    label: t(`settings.rates.${r}`),
+                  }))}
+                  onChange={(v) => onChange({ rateStyle: v })}
+                />
+              </Row>
+              <RateCurve settings={s} />
+              {s.rateStyle === 'custom' && s.customRates.type === 'actual' && (
+                <div className="rate-grid">
+                  {(
+                    [
+                      ['rollPitch', ['roll', 'pitch']],
+                      ['yaw', ['yaw']],
+                    ] as const
+                  ).map(([name, axes]) => (
+                    <div key={name} className="rate-axis">
+                      <h4>{t(`settings.rates.${name}`)}</h4>
+                      <Row label={t('settings.rates.center')}>
+                        <Slider value={s.customRates[axes[0]].center} min={50} max={400} step={5} onChange={(v) => setCustomAxis([...axes], 'center', v)} />
+                      </Row>
+                      <Row label={t('settings.rates.max')}>
+                        <Slider value={s.customRates[axes[0]].max} min={200} max={1800} step={10} onChange={(v) => setCustomAxis([...axes], 'max', v)} />
+                      </Row>
+                      <Row label={t('settings.rates.expo')}>
+                        <Slider value={s.customRates[axes[0]].expo} min={0} max={1} step={0.01} onChange={(v) => setCustomAxis([...axes], 'expo', v)} format={(v) => v.toFixed(2)} />
+                      </Row>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Row label={t('settings.airmode')} hint={t('settings.airmode.hint')}>
+                <Toggle value={s.airmode} onChange={(v) => onChange({ airmode: v })} />
+              </Row>
+              <Row label={t('settings.angleLimit')}>
+                <Slider value={s.angleLimit} min={20} max={80} step={1} onChange={(v) => onChange({ angleLimit: v })} format={(v) => `${v}°`} />
+              </Row>
+              <Row label={t('settings.throttleMid')}>
+                <Slider value={s.throttleMid} min={0.2} max={0.8} step={0.01} onChange={(v) => onChange({ throttleMid: v })} format={(v) => v.toFixed(2)} />
+              </Row>
+              <Row label={t('settings.throttleExpo')}>
+                <Slider value={s.throttleExpo} min={0} max={1} step={0.01} onChange={(v) => onChange({ throttleExpo: v })} format={(v) => v.toFixed(2)} />
+              </Row>
+            </>
+          )}
+
+          {tab === 'controls' && (
+            <>
+              <Row label={t('settings.stickMode')} hint={t('settings.stickMode.hint')}>
+                <Choice<StickMode>
+                  value={s.stickMode}
+                  options={(['mode1', 'mode2', 'mode3', 'mode4'] as const).map((m) => ({ value: m, label: m.replace('mode', 'Mode ') }))}
+                  onChange={(v) => onChange({ stickMode: v })}
+                />
+              </Row>
+              <Row label={t('settings.touchSize')}>
+                <Slider value={s.touchSize} min={0.7} max={1.5} step={0.05} onChange={(v) => onChange({ touchSize: v })} format={(v) => `${Math.round(v * 100)}%`} />
+              </Row>
+              <Row label={t('settings.touchOpacity')}>
+                <Slider value={s.touchOpacity} min={0.2} max={1} step={0.05} onChange={(v) => onChange({ touchOpacity: v })} format={(v) => `${Math.round(v * 100)}%`} />
+              </Row>
+              <Row label={t('settings.touchCenter')}>
+                <Toggle value={s.touchThrottleCentering} onChange={(v) => onChange({ touchThrottleCentering: v })} />
+              </Row>
+              <Row label={t('settings.deadband')}>
+                <Slider value={s.deadband} min={0} max={0.15} step={0.01} onChange={(v) => onChange({ deadband: v })} format={(v) => `${Math.round(v * 100)}%`} />
+              </Row>
+              <Row label={t('settings.haptics')}>
+                <Toggle value={s.haptics} onChange={(v) => onChange({ haptics: v })} />
+              </Row>
+              <Row label={t('settings.stickyThrottle')}>
+                <Toggle value={s.stickyThrottle} onChange={(v) => onChange({ stickyThrottle: v })} />
+              </Row>
+              <h3>{t('settings.keyboard')}</h3>
+              <p className="muted small">{t('settings.keyboard.help')}</p>
+              <h3>{t('settings.gamepad')}</h3>
+              <GamepadSection game={game} settings={s} onChange={onChange} />
+            </>
+          )}
+
+          {tab === 'camera' && (
+            <>
+              <Row label={t('settings.fov')}>
+                <Slider value={s.fpvFov} min={80} max={150} step={1} onChange={(v) => onChange({ fpvFov: v })} format={(v) => `${v}°`} />
+              </Row>
+              <Row label={t('settings.tilt')} hint={s.cameraTilt === null ? t('settings.tilt.auto', { deg: preset.cameraTilt }) : undefined}>
+                <Slider
+                  value={s.cameraTilt ?? preset.cameraTilt}
+                  min={-10}
+                  max={60}
+                  step={1}
+                  onChange={(v) => onChange({ cameraTilt: v === preset.cameraTilt ? null : v })}
+                  format={(v) => `${v}°`}
+                />
+              </Row>
+              <Row label={t('settings.shake')}>
+                <Slider value={s.cameraShake} min={0} max={1} step={0.05} onChange={(v) => onChange({ cameraShake: v })} format={(v) => `${Math.round(v * 100)}%`} />
+              </Row>
+              <Row label={t('settings.video')}>
+                <Choice
+                  value={s.videoLook}
+                  options={(['clean', 'digital', 'analog'] as const).map((v) => ({ value: v, label: t(`settings.video.${v}`) }))}
+                  onChange={(v) => onChange({ videoLook: v })}
+                />
+              </Row>
+              <Row label={t('settings.distortion')}>
+                <Toggle value={s.lensDistortion} onChange={(v) => onChange({ lensDistortion: v })} />
+              </Row>
+              <Row label={t('settings.osd')}>
+                <Toggle value={s.osd} onChange={(v) => onChange({ osd: v })} />
+              </Row>
+              <Row label={t('settings.units')}>
+                <Choice
+                  value={s.osdUnits}
+                  options={(['metric', 'imperial'] as const).map((v) => ({ value: v, label: t(`settings.units.${v}`) }))}
+                  onChange={(v) => onChange({ osdUnits: v })}
+                />
+              </Row>
+            </>
+          )}
+
+          {tab === 'sim' && (
+            <>
+              <Row label={t('settings.wind')}>
+                <Slider value={s.windSpeed} min={0} max={14} step={0.5} onChange={(v) => onChange({ windSpeed: v })} format={(v) => `${v.toFixed(1)} m/s`} />
+              </Row>
+              <Row label={t('settings.windFrom')}>
+                <Slider value={s.windFrom} min={0} max={355} step={5} onChange={(v) => onChange({ windFrom: v })} format={(v) => `${v}°`} />
+              </Row>
+              <Row label={t('settings.turbulence')}>
+                <Slider value={s.turbulence} min={0} max={1} step={0.05} onChange={(v) => onChange({ turbulence: v })} format={(v) => `${Math.round(v * 100)}%`} />
+              </Row>
+              <Row label={t('settings.propwash')}>
+                <Slider value={s.propwash} min={0} max={1.5} step={0.05} onChange={(v) => onChange({ propwash: v })} format={(v) => `${Math.round(v * 100)}%`} />
+              </Row>
+              <Row label={t('settings.batterySag')}>
+                <Toggle value={s.batterySag} onChange={(v) => onChange({ batterySag: v })} />
+              </Row>
+              <Row label={t('settings.crash')}>
+                <Toggle value={s.crashDetection} onChange={(v) => onChange({ crashDetection: v })} />
+              </Row>
+              <Row label={t('settings.autoRespawn')}>
+                <Toggle value={s.autoRespawn} onChange={(v) => onChange({ autoRespawn: v })} />
+              </Row>
+              <Row label={t('settings.ghost')}>
+                <Toggle value={s.ghost} onChange={(v) => onChange({ ghost: v })} />
+              </Row>
+            </>
+          )}
+
+          {tab === 'system' && (
+            <>
+              <Row label={t('settings.language')}>
+                <Choice
+                  value={s.language}
+                  options={[
+                    { value: 'ar', label: 'العربية' },
+                    { value: 'en', label: 'English' },
+                  ]}
+                  onChange={(v) => onChange({ language: v })}
+                />
+              </Row>
+              <Row label={t('settings.quality')} hint={t('settings.quality.hint')}>
+                <Choice
+                  value={s.quality}
+                  options={(['low', 'medium', 'high'] as const).map((v) => ({ value: v, label: t(`settings.quality.${v}`) }))}
+                  onChange={(v) => onChange({ quality: v })}
+                />
+              </Row>
+              <Row label={t('settings.fps')}>
+                <Toggle value={s.showFps} onChange={(v) => onChange({ showFps: v })} />
+              </Row>
+              <Row label={t('settings.volume')}>
+                <Slider value={s.masterVolume} min={0} max={1} step={0.05} onChange={(v) => onChange({ masterVolume: v })} format={(v) => `${Math.round(v * 100)}%`} />
+              </Row>
+              <Row label={t('settings.motorVolume')}>
+                <Slider value={s.motorVolume} min={0} max={1} step={0.05} onChange={(v) => onChange({ motorVolume: v })} format={(v) => `${Math.round(v * 100)}%`} />
+              </Row>
+              <Row label={t('settings.beeps')}>
+                <Toggle value={s.beeps} onChange={(v) => onChange({ beeps: v })} />
+              </Row>
+              <div className="danger-zone">
+                <button
+                  className="btn"
+                  onClick={() => {
+                    clearRecords();
+                    setCleared(true);
+                  }}
+                >
+                  {cleared ? t('settings.cleared') : t('settings.clearRecords')}
+                </button>
+                <button className="btn" onClick={() => onChange({ ...defaultSettings(), language: s.language })}>
+                  {t('settings.reset')}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+        <footer className="modal-footer">
+          <button className="btn primary" onClick={onClose}>
+            {t('settings.close')}
+          </button>
+        </footer>
       </div>
     </div>
   );
